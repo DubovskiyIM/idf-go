@@ -1,0 +1,17 @@
+# Go build artifacts
+*.exe
+*.test
+*.out
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+
+# Local dev
+/tmp/
+/conformance
