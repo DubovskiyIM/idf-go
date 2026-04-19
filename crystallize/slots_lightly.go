@@ -23,16 +23,19 @@ func slotsLightly(
 ) map[string]any {
 	switch archetype {
 	case "feed":
-		out := map[string]any{
-			"body": map[string]any{
-				"entries": feedEntries(proj.Entity, ont, vw),
-			},
+		body := map[string]any{
+			"entries": feedEntries(proj.Entity, ont, vw),
 		}
-		// Если intents > 0 — добавляются footer/toolbar (за catalog rules).
-		// В spec v0.1.5 этот случай существует, но не покрыт fixture; реализация
-		// minimal-correct: оставляем без footer/toolbar когда intents=[].
-		// При intents>0 implementer SHOULD дублировать catalog-логику actions/toolbar.
-		return out
+		// v0.2.0: itemDisplay для feed (same as catalog).
+		if proj.Entity != "" {
+			if entity, ok := ont.Entities[proj.Entity]; ok {
+				body["itemDisplay"] = map[string]any{
+					"primary":   primaryField(entity),
+					"secondary": secondaryField(entity),
+				}
+			}
+		}
+		return map[string]any{"body": body}
 
 	case "wizard":
 		steps := make([]any, 0, len(proj.Intents))
