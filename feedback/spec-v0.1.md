@@ -8,9 +8,13 @@
 
 ## Категория A: Implementer choices, требующие normative resolution в v0.2
 
-### A-1: `visibleFields[E] = "*"` как admin-override row-filter — единственный реальный конфликт
+### A-1: ✅ RESOLVED в spec-v0.1.1 (idf-go v0.1.1)
 
-**Спека (filter-world.md):** «`visibleFields` определяет column-filter (какие поля)» — то есть row-filter определяется отдельно (priority reference > ownerField > none).
+**Резолюция:** spec v0.1.1 нормировала admin-pattern через `role.base = "admin"` (spec-extension manifest §8.2 — пятая база сверх `owner|viewer|agent|observer`). Filter теперь использует explicit `role.Base == "admin"` вместо derived эвристики «все visibleFields == "*"». library/ontology.json получил `librarian.base = "admin"`. Manifest v2.1 должен sync таксономию (см. `idf-spec/feedback/manifesto-v2.md` Q-25).
+
+История проблемы (для архива):
+
+**Спека v0.1 (filter-world.md):** «`visibleFields` определяет column-filter (какие поля)» — то есть row-filter определяется отдельно (priority reference > ownerField > none).
 
 **Спека (ontology.md, Q-3):** «entity MUST быть упомянута в `role.visibleFields` — иначе невидима даже при `kind: "reference"`. visibleFields контролирует cross-section (какие entity вообще видны); kind/ownerField — row-filter».
 
