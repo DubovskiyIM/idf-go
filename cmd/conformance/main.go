@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"idf-go/crystallize"
+	"idf-go/document"
 	"idf-go/filter"
 	"idf-go/fold"
 	"idf-go/internal/jsonutil"
@@ -219,9 +220,66 @@ func main() {
 	}
 	fmt.Printf("  %d/%d (scenario × projection × viewer): artifact matches expected\n", artPass, len(artFiles))
 
+	// Step 5: document materialization (L3, с spec v0.2.0)
+	fmt.Println("== Step 5: materializeAsDocument ==")
+	docDir := filepath.Join(fixturesDir, "expected/document")
+	docFiles, _ := filepath.Glob(filepath.Join(docDir, "*.json"))
+	sort.Strings(docFiles)
+	docPass := 0
+	docLevel := "L3"
+	if len(docFiles) == 0 {
+		fmt.Println("  (no expected/document fixtures — L3 skipped)")
+		docLevel = ""
+	}
+	for _, f := range docFiles {
+		base := basename(f)
+		scenario, projID, viewer, ok := parseArtName(base, ont, projByID)
+		if !ok {
+			fmt.Printf("  %s: SKIP unparsable name\n", base)
+			continue
+		}
+		world, ok := worlds[scenario]
+		if !ok {
+			continue
+		}
+		vw := filter.FilterWorldForRole(world, viewer, ont)
+		proj := projByID[projID]
+		art, err := crystallize.Crystallize(intents, ont, proj, viewer, vw)
+		if err != nil {
+			fmt.Printf("  %s: FAIL crystallize — %v\n", base, err)
+			allPass = false
+			continue
+		}
+		doc, err := document.MaterializeAsDocument(art, vw, ont)
+		if err != nil {
+			fmt.Printf("  %s: FAIL document — %v\n", base, err)
+			allPass = false
+			continue
+		}
+		expData, _ := parser.ReadFile(f)
+		var exp map[string]any
+		_ = json.Unmarshal(expData, &exp)
+		gotJSON, _ := json.Marshal(doc)
+		var gotMap map[string]any
+		_ = json.Unmarshal(gotJSON, &gotMap)
+		if !jsonutil.SemanticEqual(gotMap, exp) {
+			fmt.Printf("  %s: FAIL document mismatch\n", base)
+			allPass = false
+			continue
+		}
+		docPass++
+	}
+	if docLevel != "" {
+		fmt.Printf("  %d/%d (scenario × projection × viewer): document matches expected\n", docPass, len(docFiles))
+	}
+
 	fmt.Println()
 	if allPass {
-		fmt.Println("== OVERALL: L1+L2 CONFORMANT ==")
+		if docLevel == "L3" {
+			fmt.Println("== OVERALL: L1+L2+L3(document) CONFORMANT ==")
+		} else {
+			fmt.Println("== OVERALL: L1+L2 CONFORMANT ==")
+		}
 		os.Exit(0)
 	}
 	fmt.Println("== OVERALL: FAILURES ==")
