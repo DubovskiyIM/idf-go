@@ -29,13 +29,15 @@ func loadVectors(t *testing.T) []vectorEntry {
 	// Ищем vectors-файл в нескольких типичных расположениях относительно
 	// idf-go checkout.
 	candidates := []string{
-		// Из main checkout idf-go/schemaversion: ../../ = sibling
-		"../../idf-spec/spec/schemas/hash-function.vectors.json",
-		// Из worktree idf-go/.worktrees/<name>/schemaversion: ../../../../ = sibling
-		"../../../../idf-spec/spec/schemas/hash-function.vectors.json",
-		// idf-spec ещё в worktree (до merge spec PR'а):
+		// Worktree spec'а (in-flight PR'ы) — приоритет, чтобы local
+		// dev'ы сразу проверяли новые vector'а:
+		"../../idf-spec/.worktrees/hash-excludes-evolution/spec/schemas/hash-function.vectors.json",
+		"../../../../idf-spec/.worktrees/hash-excludes-evolution/spec/schemas/hash-function.vectors.json",
 		"../../idf-spec/.worktrees/hash-function/spec/schemas/hash-function.vectors.json",
 		"../../../../idf-spec/.worktrees/hash-function/spec/schemas/hash-function.vectors.json",
+		// Main checkout (после merge spec PR'а — основной путь для CI):
+		"../../idf-spec/spec/schemas/hash-function.vectors.json",
+		"../../../../idf-spec/spec/schemas/hash-function.vectors.json",
 	}
 	cwd, _ := os.Getwd()
 	for _, rel := range candidates {

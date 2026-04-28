@@ -67,14 +67,20 @@ func TagWithSchemaVersion(effect map[string]any, version string) map[string]any 
 
 // HashOntology — стабильный fingerprint онтологии для
 // effect.context.schemaVersion. Возвращает 14-символьную lowercase hex
-// строку. Алгоритм: canonicalize → JSON.stringify → cyrb53 → hex pad14.
+// строку. Алгоритм: strip top-level "evolution" → canonicalize →
+// JSON.stringify → cyrb53 → hex pad14.
 //
 // Для ontology == nil возвращает "00000000000000" (sentinel).
+//
+// Top-level "evolution" поле исключается до canonicalize — см. spec
+// §2 evolution.md (resolves self-ref в entry.hash). Hash стабилен
+// относительно changes в evolution log.
 func HashOntology(ontology any) string {
 	if ontology == nil {
 		return "00000000000000"
 	}
-	canonical := canonicalize(ontology)
+	stripped := stripTopLevelEvolution(ontology)
+	canonical := canonicalize(stripped)
 	serialized, err := jsonStringify(canonical)
 	if err != nil {
 		// JSON-несовместимый input — defense только; in-spec это panic
@@ -83,6 +89,27 @@ func HashOntology(ontology any) string {
 	}
 	h := Cyrb53(serialized, 0)
 	return fmt.Sprintf("%014s", hexU64(h))
+}
+
+// stripTopLevelEvolution возвращает копию map'а без поля "evolution" на
+// верхнем уровне. Не-map значения (массивы, scalar'ы) проходят без
+// изменений — strip действует ТОЛЬКО на root object.
+func stripTopLevelEvolution(value any) any {
+	m, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	if _, has := m["evolution"]; !has {
+		return value
+	}
+	out := make(map[string]any, len(m)-1)
+	for k, v := range m {
+		if k == "evolution" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // Cyrb53 — нормативная 53-bit pure hash function (см.
