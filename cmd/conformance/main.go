@@ -1,7 +1,10 @@
 // Command conformance прогоняет L1+L2 conformance check на указанной
 // директории fixtures и печатает human-readable отчёт.
 //
-// Usage: conformance <path-to-fixtures-dir>
+// Usage:
+//
+//	conformance <fixtures-dir>                # default mode: compare to expected/*
+//	conformance <fixtures-dir> --emit <dir>   # emit JSON outputs (для cross-stack diff)
 //
 // Где path-to-fixtures-dir — каталог в формате:
 //
@@ -13,6 +16,14 @@
 //	  expected/world/<scenario>.json
 //	  expected/viewer-world/<scenario>-as-<role>-<id>.json
 //	  expected/artifact/<scenario>-<projection>-as-<role>-<id>.json
+//	  expected/document/<scenario>-<projection>-as-<role>-<id>.json
+//
+// В --emit режиме CLI не сравнивает выход с expected/* — он повторяет ту же
+// итерацию (scenario × viewer × projection из expected-директорий как
+// каноничного списка триплетов) и пишет каждый артефакт под идентичным
+// basename'ом в `<emit-dir>/{world,viewer-world,artifact,document}/<basename>.json`.
+// Cross-stack harness потом байт-сравнивает (или semantic-сравнивает) эти
+// директории попарно между stack'ами.
 //
 // Также требуется, чтобы schema-файлы были в <fixtures-dir>/../../schemas/.
 package main
@@ -35,11 +46,30 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: conformance <fixtures-dir>")
+	args := os.Args[1:]
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: conformance <fixtures-dir> [--emit <out-dir>]")
 		os.Exit(2)
 	}
-	fixturesDir := os.Args[1]
+	fixturesDir := args[0]
+	emitDir := ""
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--emit":
+			if i+1 >= len(args) {
+				fail("--emit requires <out-dir>")
+			}
+			emitDir = args[i+1]
+			i++
+		default:
+			if strings.HasPrefix(args[i], "--emit=") {
+				emitDir = strings.TrimPrefix(args[i], "--emit=")
+			} else {
+				fail("unknown arg: %s", args[i])
+			}
+		}
+	}
+	emitting := emitDir != ""
 
 	specRoot, err := filepath.Abs(filepath.Join(fixturesDir, "..", ".."))
 	if err != nil {
@@ -113,6 +143,12 @@ func main() {
 	}
 	fmt.Printf("  phi/*.json: %d/%d OK\n", phiOK, len(phiFiles))
 
+	if emitting {
+		if err := os.MkdirAll(emitDir, 0o755); err != nil {
+			fail("mkdir emit-dir: %v", err)
+		}
+	}
+
 	// Step 2: fold
 	fmt.Println("== Step 2: fold ==")
 	worlds := make(map[string]types.World)
@@ -126,6 +162,14 @@ func main() {
 			continue
 		}
 		worlds[sc] = world
+
+		if emitting {
+			if err := emitJSON(filepath.Join(emitDir, "world", sc+".json"), map[string]any{"world": world}); err != nil {
+				fail("emit world: %v", err)
+			}
+			foldPass++
+			continue
+		}
 
 		expData, err := parser.ReadFile(filepath.Join(fixturesDir, "expected/world", sc+".json"))
 		if err != nil {
@@ -144,7 +188,11 @@ func main() {
 		}
 		foldPass++
 	}
-	fmt.Printf("  %d/%d scenarios: world matches expected\n", foldPass, len(scenarios))
+	if emitting {
+		fmt.Printf("  %d/%d scenarios: world emitted\n", foldPass, len(scenarios))
+	} else {
+		fmt.Printf("  %d/%d scenarios: world matches expected\n", foldPass, len(scenarios))
+	}
 
 	// Step 3: filterWorldForRole
 	fmt.Println("== Step 3: filterWorldForRole ==")
@@ -165,6 +213,14 @@ func main() {
 		}
 		got := filter.FilterWorldForRole(world, viewer, ont)
 
+		if emitting {
+			if err := emitJSON(filepath.Join(emitDir, "viewer-world", base+".json"), map[string]any{"viewerWorld": got}); err != nil {
+				fail("emit viewer-world: %v", err)
+			}
+			vwPass++
+			continue
+		}
+
 		expData, _ := parser.ReadFile(f)
 		var exp map[string]any
 		_ = json.Unmarshal(expData, &exp)
@@ -178,7 +234,11 @@ func main() {
 		}
 		vwPass++
 	}
-	fmt.Printf("  %d/%d (scenario × viewer): viewerWorld matches expected\n", vwPass, len(vwFiles))
+	if emitting {
+		fmt.Printf("  %d/%d (scenario × viewer): viewerWorld emitted\n", vwPass, len(vwFiles))
+	} else {
+		fmt.Printf("  %d/%d (scenario × viewer): viewerWorld matches expected\n", vwPass, len(vwFiles))
+	}
 
 	// Step 4: crystallize
 	fmt.Println("== Step 4: crystallize ==")
@@ -205,6 +265,15 @@ func main() {
 			allPass = false
 			continue
 		}
+
+		if emitting {
+			if err := emitJSON(filepath.Join(emitDir, "artifact", base+".json"), art); err != nil {
+				fail("emit artifact: %v", err)
+			}
+			artPass++
+			continue
+		}
+
 		expData, _ := parser.ReadFile(f)
 		var exp map[string]any
 		_ = json.Unmarshal(expData, &exp)
@@ -218,7 +287,11 @@ func main() {
 		}
 		artPass++
 	}
-	fmt.Printf("  %d/%d (scenario × projection × viewer): artifact matches expected\n", artPass, len(artFiles))
+	if emitting {
+		fmt.Printf("  %d/%d (scenario × projection × viewer): artifact emitted\n", artPass, len(artFiles))
+	} else {
+		fmt.Printf("  %d/%d (scenario × projection × viewer): artifact matches expected\n", artPass, len(artFiles))
+	}
 
 	// Step 5: document materialization (L3, с spec v0.2.0)
 	fmt.Println("== Step 5: materializeAsDocument ==")
@@ -256,6 +329,15 @@ func main() {
 			allPass = false
 			continue
 		}
+
+		if emitting {
+			if err := emitJSON(filepath.Join(emitDir, "document", base+".json"), doc); err != nil {
+				fail("emit document: %v", err)
+			}
+			docPass++
+			continue
+		}
+
 		expData, _ := parser.ReadFile(f)
 		var exp map[string]any
 		_ = json.Unmarshal(expData, &exp)
@@ -270,10 +352,18 @@ func main() {
 		docPass++
 	}
 	if docLevel != "" {
-		fmt.Printf("  %d/%d (scenario × projection × viewer): document matches expected\n", docPass, len(docFiles))
+		if emitting {
+			fmt.Printf("  %d/%d (scenario × projection × viewer): document emitted\n", docPass, len(docFiles))
+		} else {
+			fmt.Printf("  %d/%d (scenario × projection × viewer): document matches expected\n", docPass, len(docFiles))
+		}
 	}
 
 	fmt.Println()
+	if emitting {
+		fmt.Printf("== EMITTED to %s ==\n", emitDir)
+		os.Exit(0)
+	}
 	if allPass {
 		if docLevel == "L3" {
 			fmt.Println("== OVERALL: L1+L2+L3(document) CONFORMANT ==")
@@ -284,6 +374,18 @@ func main() {
 	}
 	fmt.Println("== OVERALL: FAILURES ==")
 	os.Exit(1)
+}
+
+func emitJSON(path string, payload any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o644)
 }
 
 func basename(f string) string {
