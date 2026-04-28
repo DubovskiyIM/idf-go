@@ -42,6 +42,7 @@ import (
 	"idf-go/fold"
 	"idf-go/internal/jsonutil"
 	"idf-go/parser"
+	"idf-go/schemaversion"
 	"idf-go/types"
 )
 
@@ -146,6 +147,16 @@ func main() {
 	if emitting {
 		if err := os.MkdirAll(emitDir, 0o755); err != nil {
 			fail("mkdir emit-dir: %v", err)
+		}
+		// Hash ontology (L3-evolution §1) — emit hash/ontology.json.
+		// Computed на raw JSON bytes (через json.Unmarshal в any), не на
+		// Ontology-struct, чтобы избежать lossy-кодинга структ-полями.
+		var rawOnt any
+		if err := json.Unmarshal(ontData, &rawOnt); err == nil {
+			h := schemaversion.HashOntology(rawOnt)
+			if err := emitJSON(filepath.Join(emitDir, "hash", "ontology.json"), map[string]any{"schemaVersion": h}); err != nil {
+				fail("emit hash: %v", err)
+			}
 		}
 	}
 
